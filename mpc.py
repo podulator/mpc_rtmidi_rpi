@@ -7,9 +7,10 @@ import logging
 
 SendAutoOff = True
 AutoOffSleepMS = 0.1
+USE_I2C_7SEGMENTDISPLAY = True
 in_sys_exclusive = False
 sysex_buffer = []
-my_channel = 2
+my_channel = 1
 drum_map = {
     # c0, gpio 1, d-plug 8
     'kick': {'midi_key': 24, 'gpio': 3, 'dplug': 8},
@@ -44,6 +45,20 @@ ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 ch.setLevel(debugLevel)
 logger.addHandler(ch)
+
+def incrementMidiChannel():
+    global my_channel
+    my_channel += 1
+    if (my_channel > 16):
+        my_channel = 1
+    display(my_channel)
+
+def decrementMidiChannel():
+    global my_channel
+    my_channel -= 1
+    if (my_channel < 1):
+        my_channel = 16
+    display(my_channel)
 
 def setDebugLevel(val):
     logger.setLevel(val)
@@ -132,7 +147,40 @@ def callback(message, time_stamp):
     else:
         logger.debug("unknown message :: " + str(message))
 
+if USE_I2C_7SEGMENTDISPLAY:
+    # thanks to rpi samplerbox project for this
+    # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
+    import smbus
+
+    bus = smbus.SMBus(1)     # using I2C
+
+    def display(channel):
+        logger.info("midi channel set to :: " + str(channel))
+        raw_display("ch" + str(channel))
+
+    def raw_display(s):
+        for k in '\x76\x79\x00' + s:     # position cursor at 0
+            try:
+                bus.write_byte(0x71, ord(k))
+            except:
+                try:
+                    bus.write_byte(0x71, ord(k))
+                except:
+                    pass
+            time.sleep(0.002)
+
+    raw_display('----')
+    time.sleep(0.5)
+
+else:
+
+    def display(channel):
+        logger.info("midi channel set to :: " + str(channel))
+        pass
+
 def initialise():
+    global my_channel
+
     GPIO.setmode(GPIO.BOARD)
     for drum_key in drum_map:
         logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
@@ -154,6 +202,8 @@ def initialise():
         midi_in.callback = callback
         midi_in.ignore_types(False, False, True)
         midi_in.open_port( 0 )
+
+    display(my_channel)
 
 #print drum_map
 

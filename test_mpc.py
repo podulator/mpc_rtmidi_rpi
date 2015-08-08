@@ -7,6 +7,7 @@ import logging
 
 mpc.setDebugLevel(logging.INFO)
 mpc.initialise()
+mpc.incrementMidiChannel()
 
 pattern = [
             [ mpc.drum_map["kick"], mpc.drum_map["cymbal"] ],
