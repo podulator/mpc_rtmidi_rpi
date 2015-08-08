@@ -4,16 +4,18 @@ import rtmidi_python as rtmidi
 import midiconstants as c
 import RPi.GPIO as GPIO
 import logging
+import threading
 
 SendAutoOff = True
 AutoOffSleepMS = 0.1
-USE_I2C_7SEGMENTDISPLAY = True
+USE_I2C_7SEGMENTDISPLAY = True  # pins GPIO 2 & 3
+USE_HARDWARE_BUTTONS = True # pins GPIO 17 & 18
 in_sys_exclusive = False
 sysex_buffer = []
 my_channel = 1
 drum_map = {
     # c0, gpio 1, d-plug 8
-    'kick': {'midi_key': 24, 'gpio': 3, 'dplug': 8},
+    'kick': {'midi_key': 24, 'gpio': 4, 'dplug': 8},
     # d1, gpio 2, d-plug 9
     'snare': {'midi_key': 26, 'gpio': 5, 'dplug': 9},
     # e1, gpio 3, d-plug 5
@@ -147,6 +149,29 @@ def callback(message, time_stamp):
     else:
         logger.debug("unknown message :: " + str(message))
 
+if USE_HARDWARE_BUTTONS:
+    # thanks to rpi samplerbox project for this
+    # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
+    def Buttons():
+        GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        global lastbuttontime
+        while True:
+            now = time.time()
+            if not GPIO.input(18) and (now - lastbuttontime) > 0.2:
+                lastbuttontime = now
+                decrementMidiChannel()
+
+            elif not GPIO.input(17) and (now - lastbuttontime) > 0.2:
+                lastbuttontime = now
+                incrementMidiChannel()
+
+            time.sleep(0.020)
+
+    ButtonsThread = threading.Thread(target=Buttons)
+    ButtonsThread.daemon = True
+    ButtonsThread.start()
+
 if USE_I2C_7SEGMENTDISPLAY:
     # thanks to rpi samplerbox project for this
     # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
@@ -181,7 +206,7 @@ else:
 def initialise():
     global my_channel
 
-    GPIO.setmode(GPIO.BOARD)
+    GPIO.setmode(GPIO.BCM)
     for drum_key in drum_map:
         logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
         GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
