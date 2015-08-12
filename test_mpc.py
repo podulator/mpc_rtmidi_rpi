@@ -7,6 +7,7 @@ import logging
 
 mpc.setDebugLevel(logging.INFO)
 mpc.initialise()
+mpc.setMidiChannel(1)
 mpc.incrementMidiChannel()
 
 pattern = [
@@ -21,8 +22,8 @@ pattern = [
 ]
 
 try:
-    print("running pattern ... [ctrl-z to exit]")
-    while (1):
+    print("running pattern ... [ctrl-c to exit]")
+    while (True):
         for step in pattern:
             for instrument in step:
                 #print type(instrument)
@@ -32,5 +33,5 @@ try:
             time.sleep(0.25)
 except KeyboardInterrupt:
     # quit
-    mpc.destroy
+    mpc.destroy()
     sys.exit()

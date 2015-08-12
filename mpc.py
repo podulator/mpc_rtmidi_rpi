@@ -5,6 +5,7 @@ import midiconstants as c
 import RPi.GPIO as GPIO
 import logging
 import threading
+import os.path
 
 SendAutoOff = True
 AutoOffSleepMS = 0.1
@@ -39,6 +40,7 @@ drum_map = {
 }
 
 midi_in = None
+is_dirty = False
 debugLevel = logging.ERROR
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -49,29 +51,56 @@ ch.setLevel(debugLevel)
 logger.addHandler(ch)
 
 def incrementMidiChannel():
-    global my_channel
+    global my_channel, is_dirty
     my_channel += 1
     if (my_channel > 16):
         my_channel = 1
+    is_dirty = True
     display(my_channel)
 
 def decrementMidiChannel():
-    global my_channel
+    global my_channel, is_dirty
     my_channel -= 1
     if (my_channel < 1):
         my_channel = 16
+    is_dirty = True
     display(my_channel)
+
+def setMidiChannel(channel):
+    global my_channel, is_dirty
+    if (my_channel != channel):
+        my_channel = channel
+        if (my_channel < 1):
+            my_channel = 1
+        if (my_channel > 16):
+            my_channel = 16
+        is_dirty = True
+        display(my_channel)
 
 def setDebugLevel(val):
     logger.setLevel(val)
     ch.setLevel(val)
 
 def destroy():
-    global midi_in
+    logger.debug("destroy called")
+    global midi_in, is_dirty, my_channel
     if (midi_in != None):
         midi_in.close_port()
         del midi_in
     GPIO.cleanup()
+    if (is_dirty):
+        saveConfig()
+
+def saveConfig():
+    global my_channel
+    logger.info("saving fresh config")
+    raw_display("SAVE")
+    f = open('mpc.cfg','w')
+    f.write(str(my_channel))
+    f.close
+    time.sleep(0.5)
+    is_dirty = False
+    display(my_channel)
 
 def auto_off(drum):
     time.sleep(AutoOffSleepMS)
@@ -158,7 +187,11 @@ if USE_HARDWARE_BUTTONS:
         global lastbuttontime
         while True:
             now = time.time()
-            if not GPIO.input(18) and (now - lastbuttontime) > 0.2:
+            if not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2:
+                lastbuttontime = now
+                saveConfig()
+
+            elif not GPIO.input(18) and (now - lastbuttontime) > 0.2:
                 lastbuttontime = now
                 decrementMidiChannel()
 
@@ -180,8 +213,8 @@ if USE_I2C_7SEGMENTDISPLAY:
     bus = smbus.SMBus(1)     # using I2C
 
     def display(channel):
-        logger.info("midi channel set to :: " + str(channel))
-        raw_display("ch" + str(channel))
+        logger.info("midi channel set to :: " + str(channel).zfill(2))
+        raw_display("ch" + str(channel).zfill(2))
 
     def raw_display(s):
         for k in '\x76\x79\x00' + s:     # position cursor at 0
@@ -200,8 +233,10 @@ if USE_I2C_7SEGMENTDISPLAY:
 else:
 
     def display(channel):
-        logger.info("midi channel set to :: " + str(channel))
-        pass
+        logger.info("midi channel set to :: " + str(channel).zfill(2))
+
+    def raw_display(message):
+        logger.info(message)
 
 def initialise():
     global my_channel
@@ -227,6 +262,12 @@ def initialise():
         midi_in.callback = callback
         midi_in.ignore_types(False, False, True)
         midi_in.open_port( 0 )
+
+    if (os.path.isfile('mpc.cfg')):
+        logger.info("loading settings from mpc.cfg file")
+        f = open('mpc.cfg', 'r')
+        my_channel = int(f.readline().strip())
+        f.close
 
     display(my_channel)
 
