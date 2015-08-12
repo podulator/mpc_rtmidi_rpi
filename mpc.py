@@ -7,6 +7,18 @@ import logging
 import threading
 import os.path
 
+#
+# TO ENABLE I2C for the rpi2
+# sudo raspi-config
+# and enable i2c in advanced options
+# then
+# sudo nano -w /etc/modules
+# i2c-bcm2708
+# i2c-dev
+# to test we're good....
+# sudo i2cdetect -y 1
+#
+
 SendAutoOff = True
 AutoOffSleepMS = 0.1
 USE_I2C_7SEGMENTDISPLAY = True  # pins GPIO 2 & 3
@@ -30,7 +42,7 @@ drum_map = {
     # b1, gpio 7, d-plug 7
     'tom4': {'midi_key': 35, 'gpio': 16, 'dplug': 7},
     # f#1, gpio 8, d-plug 11
-    'closed_hat': {'midi_key': 30, 'gpio': 18, 'dplug': 11},
+    'closed_hat': {'midi_key': 30, 'gpio': 22, 'dplug': 11},
     # g#1, gpio 9, d-plug 12
     'open_hat': {'midi_key': 32, 'gpio': 19, 'dplug': 12},
     # a#1, gpio 10, d-plug 6
@@ -39,8 +51,10 @@ drum_map = {
     'cymbal_stop': {'midi_key': 36, 'gpio': 22, 'dplug': 13}
 }
 
+GPIO.setmode(GPIO.BCM)
 midi_in = None
 is_dirty = False
+initialised = False
 debugLevel = logging.ERROR
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -53,7 +67,7 @@ logger.addHandler(ch)
 def incrementMidiChannel():
     global my_channel, is_dirty
     my_channel += 1
-    if (my_channel > 16):
+    if ( my_channel > 16 ):
         my_channel = 1
     is_dirty = True
     display(my_channel)
@@ -61,18 +75,18 @@ def incrementMidiChannel():
 def decrementMidiChannel():
     global my_channel, is_dirty
     my_channel -= 1
-    if (my_channel < 1):
+    if ( my_channel < 1 ):
         my_channel = 16
     is_dirty = True
     display(my_channel)
 
 def setMidiChannel(channel):
     global my_channel, is_dirty
-    if (my_channel != channel):
+    if ( my_channel != channel ):
         my_channel = channel
-        if (my_channel < 1):
+        if ( my_channel < 1 ):
             my_channel = 1
-        if (my_channel > 16):
+        if ( my_channel > 16 ):
             my_channel = 16
         is_dirty = True
         display(my_channel)
@@ -82,9 +96,9 @@ def setDebugLevel(val):
     ch.setLevel(val)
 
 def destroy():
-    logger.debug("destroy called")
-    global midi_in, is_dirty, my_channel
-    if (midi_in != None):
+    global initialised, midi_in, is_dirty, my_channel
+    initialised = False
+    if ( midi_in != None ):
         midi_in.close_port()
         del midi_in
     GPIO.cleanup()
@@ -109,10 +123,12 @@ def auto_off(drum):
 
 def callback(message, time_stamp):
 
-    global in_sys_exclusive
-    global sysex_buffer
+    global in_sys_exclusive, initialised, sysex_buffer
 
-    if logger.isEnabledFor(logging.DEBUG):
+    if ( not initialised ):
+        return
+
+    if ( logger.isEnabledFor(logging.DEBUG) ):
         message_text = ", ".join(map(str, message))
         logger.debug("received :: (@ " + str(time_stamp) + ") == " + message_text)
 
@@ -184,20 +200,21 @@ if USE_HARDWARE_BUTTONS:
     def Buttons():
         GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        global lastbuttontime
+        global lastbuttontime, initialised
         while True:
-            now = time.time()
-            if not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2:
-                lastbuttontime = now
-                saveConfig()
+            if (initialised):
+                now = time.time()
+                if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                    lastbuttontime = now
+                    saveConfig()
 
-            elif not GPIO.input(18) and (now - lastbuttontime) > 0.2:
-                lastbuttontime = now
-                decrementMidiChannel()
+                elif ( not GPIO.input(18) and (now - lastbuttontime) > 0.2) :
+                    lastbuttontime = now
+                    decrementMidiChannel()
 
-            elif not GPIO.input(17) and (now - lastbuttontime) > 0.2:
-                lastbuttontime = now
-                incrementMidiChannel()
+                elif ( not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                    lastbuttontime = now
+                    incrementMidiChannel()
 
             time.sleep(0.020)
 
@@ -209,7 +226,6 @@ if USE_I2C_7SEGMENTDISPLAY:
     # thanks to rpi samplerbox project for this
     # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
     import smbus
-
     bus = smbus.SMBus(1)     # using I2C
 
     def display(channel):
@@ -239,9 +255,8 @@ else:
         logger.info(message)
 
 def initialise():
-    global my_channel
+    global my_channel, initialised
 
-    GPIO.setmode(GPIO.BCM)
     for drum_key in drum_map:
         logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
         GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
@@ -254,7 +269,7 @@ def initialise():
         logger.info("found port :: " + port_name)
         has_ports = True
 
-    if (not has_ports):
+    if ( not has_ports ):
         logger.info("No midi in ports found, quitting")
         exit (1)
     else:
@@ -263,13 +278,14 @@ def initialise():
         midi_in.ignore_types(False, False, True)
         midi_in.open_port( 0 )
 
-    if (os.path.isfile('mpc.cfg')):
+    if ( os.path.isfile('mpc.cfg') ):
         logger.info("loading settings from mpc.cfg file")
         f = open('mpc.cfg', 'r')
         my_channel = int(f.readline().strip())
         f.close
 
     display(my_channel)
+    initialised = True
 
 #print drum_map
 
