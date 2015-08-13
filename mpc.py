@@ -6,6 +6,7 @@ import RPi.GPIO as GPIO
 import logging
 import threading
 import os.path
+import sys
 
 #
 # TO ENABLE I2C for the rpi2
@@ -17,6 +18,10 @@ import os.path
 # i2c-dev
 # to test we're good....
 # sudo i2cdetect -y 1
+#
+# run via a root crontab on reboot eg.
+#
+# @reboot        /home/mat/mpc.py 2>&1 > /home/mat/mpc.log
 #
 
 SendAutoOff = True
@@ -55,11 +60,11 @@ GPIO.setmode(GPIO.BCM)
 midi_in = None
 is_dirty = False
 initialised = False
-debugLevel = logging.ERROR
+debugLevel = logging.INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-ch = logging.StreamHandler()
+ch = logging.StreamHandler(sys.stdout)
 ch.setFormatter(formatter)
 ch.setLevel(debugLevel)
 logger.addHandler(ch)
@@ -216,7 +221,8 @@ if USE_HARDWARE_BUTTONS:
                     lastbuttontime = now
                     incrementMidiChannel()
 
-            time.sleep(0.020)
+            if ( time ):
+                time.sleep(0.020)
 
     ButtonsThread = threading.Thread(target=Buttons)
     ButtonsThread.daemon = True
@@ -284,7 +290,7 @@ def initialise():
         my_channel = int(f.readline().strip())
         f.close
 
-    display(my_channel)
+    display( my_channel )
     initialised = True
 
 #print drum_map
@@ -292,10 +298,17 @@ def initialise():
 if __name__ == "__main__":
 
     try:
+        print ("initialsing")
         initialise()
-        raw_input("running....[press enter to exit]")
-    finally:
-        print("exiting")
+        print("running engine ... [ctrl-c to exit]")
+        sys.stdout.flush()
+        while ( True ):
+            if ( time ):
+                time.sleep(1)
+    except KeyboardInterrupt:
+        # quit
         destroy()
+        sys.stdout.flush()
+        sys.exit()
 
 #--------------------------------------------------------------------------
