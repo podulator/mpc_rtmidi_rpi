@@ -25,7 +25,9 @@ import sys
 # @reboot        /home/mat/mpc.py 2>&1 > /home/mat/mpc.log
 #
 # thanks to the rpi samplerbox project for hardware pointers on pullups / downs and component list
+# http://www.samplerbox.org/
 #
+
 
 SendAutoOff = True
 AutoOffSleepMS = 0.1
@@ -103,17 +105,6 @@ def setMidiChannel(channel):
 def setDebugLevel(val):
     logger.setLevel(val)
     ch.setLevel(val)
-
-def destroy():
-    global initialised, midi_in, is_dirty, my_channel
-    raw_display("    ")
-    initialised = False
-    if ( midi_in != None ):
-        midi_in.close_port()
-        del midi_in
-    GPIO.cleanup()
-    if (is_dirty):
-        saveConfig()
 
 def saveConfig():
     global my_channel
@@ -261,9 +252,20 @@ def initialise():
     ButtonsThread.daemon = True
     ButtonsThread.start()
 
-    animate("----init----nnidi2nnpc----")
+    animate("    ----init----nnidi2nnpc----    ")
     display( my_channel )
     initialised = True
+
+def destroy():
+    global initialised, midi_in, is_dirty, my_channel
+    animate("----power off----    ")
+    initialised = False
+    if ( midi_in != None ):
+        midi_in.close_port()
+        del midi_in
+    GPIO.cleanup()
+    if (is_dirty):
+        saveConfig()
 
 def Buttons():
     logger.info("setting up hardware buttons")
