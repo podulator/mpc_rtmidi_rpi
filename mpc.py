@@ -3,6 +3,7 @@ import time
 import rtmidi_python as rtmidi
 import midiconstants as c
 import RPi.GPIO as GPIO
+import smbus    # pins GPIO 2 & 3
 import logging
 import threading
 import os.path
@@ -26,8 +27,6 @@ import sys
 
 SendAutoOff = True
 AutoOffSleepMS = 0.1
-USE_I2C_7SEGMENTDISPLAY = True  # pins GPIO 2 & 3
-USE_HARDWARE_BUTTONS = True # pins GPIO 17 & 18
 in_sys_exclusive = False
 sysex_buffer = []
 my_channel = 1
@@ -61,6 +60,8 @@ midi_in = None
 is_dirty = False
 initialised = False
 lastbuttontime = 0
+mybus = smbus.SMBus(1)
+
 debugLevel = logging.INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -201,98 +202,27 @@ def callback(message, time_stamp):
     else:
         logger.debug("unknown message :: " + str(message))
 
-if USE_HARDWARE_BUTTONS:
-    # thanks to rpi samplerbox project for this
-    # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
-    def Buttons():
-        logger.info("setting up hardware buttons")
-        GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        global lastbuttontime, initialised
-        while True:
-            if (initialised):
-                now = time.time()
-                if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
-                    logger.info("both buttons pressed, saving")
-                    lastbuttontime = now
-                    saveConfig()
+def animate(longString):
+    strlen = len(longString) - 4
+    for x in range(0, strlen - 1):
+        raw_display( longString[x:x+4] )
+        time.sleep(0.2)
 
-                elif ( not GPIO.input(18) and (now - lastbuttontime) > 0.2) :
-                    logger.info("increment button pressed")
-                    lastbuttontime = now
-                    decrementMidiChannel()
+def display(channel):
+    logger.info("midi channel set to :: " + str(channel).zfill(2))
+    raw_display("ch" + str(channel).zfill(2))
 
-                elif ( not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
-                    logger.info("decrement button pressed")
-                    lastbuttontime = now
-                    incrementMidiChannel()
-
-            if ( time ):
-                time.sleep(0.020)
-
-    ButtonsThread = threading.Thread(target=Buttons)
-    ButtonsThread.daemon = True
-    ButtonsThread.start()
-
-if USE_I2C_7SEGMENTDISPLAY:
-    # thanks to rpi samplerbox project for this
-    # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
-    import smbus
-    bus = smbus.SMBus(1)     # using I2C
-
-    def display(channel):
-        logger.info("midi channel set to :: " + str(channel).zfill(2))
-        raw_display("ch" + str(channel).zfill(2))
-
-    def raw_display(s):
-        for k in '\x76\x79\x00' + s:     # position cursor at 0
+def raw_display(s):
+    global mybus
+    for k in '\x76\x79\x00' + s:     # position cursor at 0
+        try:
+            bus.write_byte(0x71, ord(k))
+        except:
             try:
                 bus.write_byte(0x71, ord(k))
             except:
-                try:
-                    bus.write_byte(0x71, ord(k))
-                except:
-                    pass
-            time.sleep(0.002)
-
-    raw_display('----')
-    time.sleep(0.5)
-    raw_display('---n')
-    time.sleep(0.2)
-    raw_display('--nn')
-    time.sleep(0.2)
-    raw_display('-nni')
-    time.sleep(0.2)
-    raw_display('nnid')
-    time.sleep(0.2)
-    raw_display('nidi')
-    time.sleep(0.2)
-    raw_display('idi2')
-    time.sleep(0.2)
-    raw_display('di2n')
-    time.sleep(0.2)
-    raw_display('i2nn')
-    time.sleep(0.2)
-    raw_display('2nnp')
-    time.sleep(0.2)
-    raw_display('nnpc')
-    time.sleep(0.2)
-    raw_display('npc-')
-    time.sleep(0.2)
-    raw_display('pc--')
-    time.sleep(0.2)
-    raw_display('c---')
-    time.sleep(0.2)
-    raw_display('----')
-    time.sleep(0.2)
-
-else:
-
-    def display(channel):
-        logger.info("midi channel set to :: " + str(channel).zfill(2))
-
-    def raw_display(message):
-        logger.info(message)
+                pass
+        time.sleep(0.002)
 
 def initialise():
     global my_channel, initialised
@@ -324,10 +254,41 @@ def initialise():
         my_channel = int(f.readline().strip())
         f.close
 
+    # start the buttons probing
+    ButtonsThread = threading.Thread(target=Buttons)
+    ButtonsThread.daemon = True
+    ButtonsThread.start()
+
+    animate("----init----nnidi2nnpc----")
     display( my_channel )
     initialised = True
 
-#print drum_map
+def Buttons():
+    logger.info("setting up hardware buttons")
+    GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    global lastbuttontime, initialised
+    while True:
+        if (initialised):
+            now = time.time()
+            if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                logger.info("both buttons pressed, saving")
+                lastbuttontime = now
+                saveConfig()
+
+            elif ( not GPIO.input(18) and (now - lastbuttontime) > 0.2) :
+                logger.info("increment button pressed")
+                lastbuttontime = now
+                decrementMidiChannel()
+
+            elif ( not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                logger.info("decrement button pressed")
+                lastbuttontime = now
+                incrementMidiChannel()
+
+        if ( time ):
+            time.sleep(0.020)
 
 if __name__ == "__main__":
 
