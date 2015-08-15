@@ -75,6 +75,10 @@ ch.setFormatter(formatter)
 ch.setLevel(debugLevel)
 logger.addHandler(ch)
 
+def setDebugLevel(val):
+    logger.setLevel(val)
+    ch.setLevel(val)
+
 def incrementMidiChannel():
     global my_channel, is_dirty
     my_channel += 1
@@ -89,7 +93,7 @@ def decrementMidiChannel():
     if ( my_channel < 1 ):
         my_channel = 16
     is_dirty = True
-    display(my_channel)
+    displayChannel( my_channel )
 
 def setMidiChannel(channel):
     global my_channel, is_dirty
@@ -100,27 +104,47 @@ def setMidiChannel(channel):
         if ( my_channel > 16 ):
             my_channel = 16
         is_dirty = True
-        display(my_channel)
-
-def setDebugLevel(val):
-    logger.setLevel(val)
-    ch.setLevel(val)
+        displayChannel( my_channel )
 
 def saveConfig():
     global my_channel
-    logger.info("saving fresh config")
-    raw_display("SAUE")
-    f = open('mpc.cfg','w')
-    f.write(str(my_channel))
+    logger.info( "saving fresh config" )
+    raw_display( "SAUE" )
+    f = open( 'mpc.cfg','w' )
+    f.write( str(my_channel) )
     f.close
     time.sleep(0.5)
     is_dirty = False
-    display(my_channel)
+    displayChannel( my_channel )
 
-def auto_off(drum):
-    time.sleep(AutoOffSleepMS)
-    logger.info("auto_off killing GPIO " + str(drum["gpio"]))
-    GPIO.output(drum["gpio"], False)
+def animate(longString):
+    logger.info( "writing :: " + longString )
+    strlen = len(longString) - 4
+    clearDisplay()
+    for x in range(0, strlen - 1):
+        raw_display( longString[x:x+4] )
+        time.sleep(0.2)
+
+def displayChannel(channel):
+    logger.info( "midi channel set to :: " + str(channel).zfill(2) )
+    clearDisplay()
+    raw_display( "ch" + str(channel).zfill(2) )
+
+def clearDisplay():
+    mybus.write_byte(0x71, 0x76)
+
+def raw_display(s):
+    global mybus
+    # position cursor at 0, append the string
+    for k in '\x79\x00' + s:
+        try:
+            # 0x71 is the hardware address of the lcd
+            mybus.write_byte(0x71, ord(k))
+        except:
+            try:
+                mybus.write_byte(0x71, ord(k))
+            except:
+                pass
 
 def callback(message, time_stamp):
 
@@ -131,27 +155,27 @@ def callback(message, time_stamp):
 
     if ( logger.isEnabledFor(logging.DEBUG) ):
         message_text = ", ".join(map(str, message))
-        logger.debug("received :: (@ " + str(time_stamp) + ") == " + message_text)
+        logger.debug( "received :: (@ " + str(time_stamp) + ") == " + message_text )
 
     if ( in_sys_exclusive ):
-        logger.debug("handling sysex stream")
+        logger.debug( "handling sysex stream" )
         if ( message[0] == 0xF7 ):
-            logger.info("at the end of the message :: " + str(sysex_buffer))
+            logger.info( "at the end of the message :: " + str(sysex_buffer) )
             in_sys_exclusive = False
         else:
-            logger.debug("appending message part :: " + str(message))
+            logger.debug( "appending message part :: " + str(message) )
             sysex_buffer.append( message )
 
     #if ( (message[0] - 0x90) == (my_channel - 1) ):
     if ( (message[0] == c.NOTE_ON | (my_channel - 1)) ):
-        logger.debug("it's a 'note on' event on our midi channel")
+        logger.debug( "it's a 'note on' event on our midi channel" )
 
         for drum_key in drum_map:
-            if (drum_map[drum_key]["midi_key"] == message[1]):
-                logger.info("let's hit the " + drum_key + " on GPIO " + str(drum_map[drum_key]["gpio"]))
+            if ( drum_map[drum_key]["midi_key"] == message[1] ):
+                logger.info( "let's hit the " + drum_key + " on GPIO " + str(drum_map[drum_key]["gpio"]) )
 
                 # light up the pin
-                GPIO.output(drum_map[drum_key]["gpio"], True)
+                GPIO.output( drum_map[drum_key]["gpio"], True )
 
                 # and then do an auto off
                 if ( SendAutoOff ):
@@ -160,62 +184,45 @@ def callback(message, time_stamp):
                 break
 
     elif ( (message[0] == c.NOTE_OFF | (my_channel - 1)) ):
-        logger.debug("it's a 'note off' event on our channel")
+        logger.debug( "it's a 'note off' event on our channel" )
 
         for drum_key in drum_map:
-            if (drum_map[drum_key]["midi_key"] == message[1]):
-                logger.info("let's stop that " + drum_key)
+            if ( drum_map[drum_key]["midi_key"] == message[1] ):
+                logger.info( "let's stop that " + drum_key )
                 break
 
     elif ( message[0] == 0xF2 ):
-        logger.debug("song position counter")
+        logger.debug( "song position counter" )
         #message[1] = low
         #message[2] = hi
 
     elif ( message[0] == 0xF8 ):
-        logger.debug("ping ... timing message")
+        logger.debug( "ping ... timing message" )
 
     elif ( message[0] == 0xFA ):
-        logger.info("song start")
+        logger.info( "song start" )
 
     elif ( message[0] == 0xFB ):
-        logger.info("song continue")
+        logger.info( "song continue" )
 
     elif ( message[0] == 0xFC ):
-        logger.info("song stop")
+        logger.info( "song stop" )
 
     elif ( message[0] == 0xFF ):
-        logger.info("down tools, it's a reset")
+        logger.info( "down tools, it's a reset" )
 
     elif ( message[0] == 0xF0 ):
-        logger.debug("potential timecode :: " + str(message))
+        logger.debug( "potential timecode :: " + str(message) )
         #in_sys_exclusive = True
         #sysex_buffer = []
 
     else:
-        logger.debug("unknown message :: " + str(message))
+        logger.debug( "unknown message :: " + str(message) )
 
-def animate(longString):
-    strlen = len(longString) - 4
-    for x in range(0, strlen - 1):
-        raw_display( longString[x:x+4] )
-        time.sleep(0.2)
-
-def display(channel):
-    logger.info("midi channel set to :: " + str(channel).zfill(2))
-    raw_display("ch" + str(channel).zfill(2))
-
-def raw_display(s):
-    global mybus
-    for k in '\x76\x79\x00' + s:     # position cursor at 0
-        try:
-            bus.write_byte(0x71, ord(k))
-        except:
-            try:
-                bus.write_byte(0x71, ord(k))
-            except:
-                pass
-        time.sleep(0.002)
+def auto_off(drum):
+    time.sleep(AutoOffSleepMS)
+    logger.info( "auto_off killing GPIO " + str(drum["gpio"]) )
+    GPIO.output(drum["gpio"], False)
 
 def initialise():
     global my_channel, initialised
@@ -224,7 +231,7 @@ def initialise():
         logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
         GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
 
-    logger.info("Searching for Midi in ports ... ")
+    logger.info("searching for Midi in ports ... ")
     midi_in = rtmidi.MidiIn()
 
     has_ports = False
@@ -233,12 +240,13 @@ def initialise():
         has_ports = True
 
     if ( not has_ports ):
-        logger.info("No midi in ports found, quitting")
+        logger.info("no midi in ports found, quitting")
         exit (1)
     else:
-        logger.info("Opening first port")
+        logger.info("opening first port")
         midi_in.callback = callback
-        midi_in.ignore_types(False, False, True)
+        # skip any of sysex, time and sensitivity aka. aftertouch
+        midi_in.ignore_types(True, True, True)
         midi_in.open_port( 0 )
 
     if ( os.path.isfile('mpc.cfg') ):
@@ -253,12 +261,13 @@ def initialise():
     ButtonsThread.start()
 
     animate("    ----init----nnidi2nnpc----    ")
-    display( my_channel )
+    displayChannel( my_channel )
     initialised = True
 
 def destroy():
     global initialised, midi_in, is_dirty, my_channel
-    animate("----power off----    ")
+    animate("----pouuering off----")
+    clearDisplay()
     initialised = False
     if ( midi_in != None ):
         midi_in.close_port()
@@ -297,7 +306,7 @@ def Buttons():
 if __name__ == "__main__":
 
     try:
-        print ("initialsing")
+        print ("initialising")
         initialise()
         print("running engine ... [ctrl-c to exit]")
         sys.stdout.flush()
