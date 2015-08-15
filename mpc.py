@@ -60,6 +60,7 @@ GPIO.setmode(GPIO.BCM)
 midi_in = None
 is_dirty = False
 initialised = False
+lastbuttontime = 0
 debugLevel = logging.INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -102,6 +103,7 @@ def setDebugLevel(val):
 
 def destroy():
     global initialised, midi_in, is_dirty, my_channel
+    raw_display("    ")
     initialised = False
     if ( midi_in != None ):
         midi_in.close_port()
@@ -113,7 +115,7 @@ def destroy():
 def saveConfig():
     global my_channel
     logger.info("saving fresh config")
-    raw_display("SAVE")
+    raw_display("SAUE")
     f = open('mpc.cfg','w')
     f.write(str(my_channel))
     f.close
@@ -203,6 +205,7 @@ if USE_HARDWARE_BUTTONS:
     # thanks to rpi samplerbox project for this
     # https://github.com/josephernest/SamplerBox/blob/master/samplerbox.py
     def Buttons():
+        logger.info("setting up hardware buttons")
         GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         global lastbuttontime, initialised
@@ -210,14 +213,17 @@ if USE_HARDWARE_BUTTONS:
             if (initialised):
                 now = time.time()
                 if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                    logger.info("both buttons pressed, saving")
                     lastbuttontime = now
                     saveConfig()
 
                 elif ( not GPIO.input(18) and (now - lastbuttontime) > 0.2) :
+                    logger.info("increment button pressed")
                     lastbuttontime = now
                     decrementMidiChannel()
 
                 elif ( not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
+                    logger.info("decrement button pressed")
                     lastbuttontime = now
                     incrementMidiChannel()
 
@@ -251,6 +257,34 @@ if USE_I2C_7SEGMENTDISPLAY:
 
     raw_display('----')
     time.sleep(0.5)
+    raw_display('---n')
+    time.sleep(0.2)
+    raw_display('--nn')
+    time.sleep(0.2)
+    raw_display('-nni')
+    time.sleep(0.2)
+    raw_display('nnid')
+    time.sleep(0.2)
+    raw_display('nidi')
+    time.sleep(0.2)
+    raw_display('idi2')
+    time.sleep(0.2)
+    raw_display('di2n')
+    time.sleep(0.2)
+    raw_display('i2nn')
+    time.sleep(0.2)
+    raw_display('2nnp')
+    time.sleep(0.2)
+    raw_display('nnpc')
+    time.sleep(0.2)
+    raw_display('npc-')
+    time.sleep(0.2)
+    raw_display('pc--')
+    time.sleep(0.2)
+    raw_display('c---')
+    time.sleep(0.2)
+    raw_display('----')
+    time.sleep(0.2)
 
 else:
 
