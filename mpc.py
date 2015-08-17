@@ -28,7 +28,6 @@ import sys
 # http://www.samplerbox.org/
 #
 
-
 SendAutoOff = True
 AutoOffSleepMS = 0.1
 in_sys_exclusive = False
@@ -63,7 +62,6 @@ GPIO.setmode(GPIO.BCM)
 midi_in = None
 is_dirty = False
 initialised = False
-lastbuttontime = 0
 mybus = smbus.SMBus(1)
 
 debugLevel = logging.INFO
@@ -85,7 +83,7 @@ def incrementMidiChannel():
     if ( my_channel > 16 ):
         my_channel = 1
     is_dirty = True
-    display(my_channel)
+    displayChannel( my_channel )
 
 def decrementMidiChannel():
     global my_channel, is_dirty
@@ -127,7 +125,6 @@ def animate(longString):
 
 def displayChannel(channel):
     logger.info( "midi channel set to :: " + str(channel).zfill(2) )
-    clearDisplay()
     raw_display( "ch" + str(channel).zfill(2) )
 
 def clearDisplay():
@@ -260,48 +257,69 @@ def initialise():
     ButtonsThread.daemon = True
     ButtonsThread.start()
 
-    animate("    ----init----nnidi2nnpc----    ")
+    animate("    ----init----nnidi-2-nnpc----    ")
     displayChannel( my_channel )
     initialised = True
 
-def destroy():
-    global initialised, midi_in, is_dirty, my_channel
+def shutdown():
     animate("----pouuering off----")
-    clearDisplay()
+    destroy()
+    raw_display('    ')
+    os.system("halt")
+
+def destroy():
+    global initialised, midi_in
+    raw_display("....")
     initialised = False
     if ( midi_in != None ):
         midi_in.close_port()
         del midi_in
     GPIO.cleanup()
-    if (is_dirty):
-        saveConfig()
 
 def Buttons():
     logger.info("setting up hardware buttons")
-    GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    global lastbuttontime, initialised
+    global initialised, is_dirty
+    lastButtonTime = 0
+    longPressTime = 0
     while True:
         if (initialised):
             now = time.time()
-            if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
-                logger.info("both buttons pressed, saving")
-                lastbuttontime = now
-                saveConfig()
+            if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastButtonTime) > 0.2 ):
+                logger.info("both buttons pressed")
+                lastButtonTime = now
+                # cache the start of the dbl button press
+                if ( longPressTime == 0 ):
+                    longPressTime = now
+                    logger.info( "capturing longPressTime as :: " + str(longPressTime) )
+                else:
+                    logger.info( "now - longPressTime = " + str( now - longPressTime) )
+                    if ( (now - longPressTime > 1 and now - longPressTime < 2) and is_dirty ):
+                        logger.info("saving")
+                        saveConfig()
+                    elif ( now - longPressTime > 5 ):
+                        logger.info("shutting down")
+                        shutdown()
 
-            elif ( not GPIO.input(18) and (now - lastbuttontime) > 0.2) :
+            elif ( not GPIO.input(17) and (now - lastButtonTime) > 0.2) :
+                longPressTime = 0
                 logger.info("increment button pressed")
-                lastbuttontime = now
-                decrementMidiChannel()
-
-            elif ( not GPIO.input(17) and (now - lastbuttontime) > 0.2 ):
-                logger.info("decrement button pressed")
-                lastbuttontime = now
+                lastButtonTime = now
                 incrementMidiChannel()
 
+            elif ( not GPIO.input(18) and (now - lastButtonTime) > 0.2 ):
+                longPressTime = 0
+                logger.info("decrement button pressed")
+                lastButtonTime = now
+                decrementMidiChannel()
+            else:
+                logger.info("no button pressed")
+                longPressTime = 0
+
         if ( time ):
-            time.sleep(0.020)
+            time.sleep(0.2)
 
 if __name__ == "__main__":
 
