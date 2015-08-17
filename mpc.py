@@ -22,7 +22,7 @@ import sys
 #
 # run via a root crontab on reboot eg.
 #
-# @reboot        /home/mat/mpc.py 2>&1 > /home/mat/mpc.log
+# @reboot        /home/mat/stop_services.sh && /home/mat/mpc.py 2>&1 > /home/mat/mpc.log
 #
 # thanks to the rpi samplerbox project for hardware pointers on pullups / downs and component list
 # http://www.samplerbox.org/
