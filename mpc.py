@@ -8,6 +8,7 @@ import logging
 import threading
 import os.path
 import sys
+import serial
 
 #
 # TO ENABLE I2C for the rpi2
@@ -20,6 +21,19 @@ import sys
 # to test we're good....
 # sudo i2cdetect -y 1
 #
+# also, stop the UART being a serial console
+# remove the refernce to ttyAMA0 in /boot/cmdline,txt
+#
+# edit /boot/config.txt, adding the following lines
+# # Change UART clock to 2441000 for MIDI 31250 baud rate
+# # As per patch https://www.raspberrypi.org/forums/viewtopic.php?f=29&t=113753&p=801441
+# init_uart_clock=2441000
+# init_uart_baud=38400
+# dtparam=uart0_clkrate=3000000
+#
+# comment out the following line in /etc/inittab
+# T0: 23: respawn: / sbin / getty -L ttyAMA0 115200 vt100
+
 # run via a root crontab on reboot eg.
 #
 # @reboot        /home/mat/stop_services.sh && /home/mat/mpc.py 2>&1 > /home/mat/mpc.log
@@ -45,7 +59,7 @@ drum_map = {
     # g1, gpio 5, d-plug 2
     'tom2': {'midi_key': 31, 'gpio': 11, 'dplug': 2},
     # a1, gpio 6, d-plug 10
-    'tom3': {'midi_key': 33, 'gpio': 15, 'dplug': 10},
+    'tom3': {'midi_key': 33, 'gpio': 24, 'dplug': 10},
     # b1, gpio 7, d-plug 7
     'tom4': {'midi_key': 35, 'gpio': 16, 'dplug': 7},
     # f#1, gpio 8, d-plug 11
@@ -55,7 +69,7 @@ drum_map = {
     # a#1, gpio 10, d-plug 6
     'cymbal': {'midi_key': 34, 'gpio': 21, 'dplug': 6},
     # c1, gpio 11, d-plug 13
-    'cymbal_stop': {'midi_key': 36, 'gpio': 22, 'dplug': 13}
+    'cymbal_stop': {'midi_key': 36, 'gpio': 23, 'dplug': 13}
 }
 
 GPIO.setmode(GPIO.BCM)
@@ -111,8 +125,8 @@ def saveConfig():
     f = open( 'mpc.cfg','w' )
     f.write( str(my_channel) )
     f.close
-    time.sleep(0.5)
     is_dirty = False
+    time.sleep(0.5)
     displayChannel( my_channel )
 
 def animate(longString):
@@ -125,7 +139,7 @@ def animate(longString):
 
 def displayChannel(channel):
     logger.info( "midi channel set to :: " + str(channel).zfill(2) )
-    raw_display( "ch" + str(channel).zfill(2) )
+    raw_display( "CH" + str(channel).zfill(2) )
 
 def clearDisplay():
     mybus.write_byte(0x71, 0x76)
@@ -150,7 +164,7 @@ def callback(message, time_stamp):
     if ( not initialised ):
         return
 
-    if ( logger.isEnabledFor(logging.DEBUG) ):
+    if ( logger.isEnabledFor(logging.INFO) ):
         message_text = ", ".join(map(str, message))
         logger.debug( "received :: (@ " + str(time_stamp) + ") == " + message_text )
 
@@ -214,7 +228,7 @@ def callback(message, time_stamp):
         #sysex_buffer = []
 
     else:
-        logger.debug( "unknown message :: " + str(message) )
+        logger.info( "unknown message :: " + str(message) )
 
 def auto_off(drum):
     time.sleep(AutoOffSleepMS)
@@ -257,7 +271,12 @@ def initialise():
     ButtonsThread.daemon = True
     ButtonsThread.start()
 
-    animate("    ----init----nnidi-2-nnpc----    ")
+    # setup serial port midi
+    MidiThread = threading.Thread(target=MidiSerialCallback)
+    MidiThread.daemon = True
+    MidiThread.start()
+
+    animate("    ----InIt----nnIDI-2-nnPC----    ")
     displayChannel( my_channel )
     initialised = True
 
@@ -293,9 +312,9 @@ def Buttons():
                 # cache the start of the dbl button press
                 if ( longPressTime == 0 ):
                     longPressTime = now
-                    logger.info( "capturing longPressTime as :: " + str(longPressTime) )
+                    logger.debug( "capturing longPressTime as :: " + str(longPressTime) )
                 else:
-                    logger.info( "now - longPressTime = " + str( now - longPressTime) )
+                    logger.debug( "now - longPressTime = " + str( now - longPressTime) )
                     if ( (now - longPressTime > 1 and now - longPressTime < 2) and is_dirty ):
                         logger.info("saving")
                         saveConfig()
@@ -303,23 +322,41 @@ def Buttons():
                         logger.info("shutting down")
                         shutdown()
 
-            elif ( not GPIO.input(17) and (now - lastButtonTime) > 0.2) :
+            elif ( not GPIO.input(17) and (now - lastButtonTime) > 0.5) :
                 longPressTime = 0
                 logger.info("increment button pressed")
                 lastButtonTime = now
                 incrementMidiChannel()
 
-            elif ( not GPIO.input(18) and (now - lastButtonTime) > 0.2 ):
+            elif ( not GPIO.input(18) and (now - lastButtonTime) > 0.5 ):
                 longPressTime = 0
                 logger.info("decrement button pressed")
                 lastButtonTime = now
                 decrementMidiChannel()
             else:
-                logger.info("no button pressed")
+                logger.debug("no button pressed")
                 longPressTime = 0
 
         if ( time ):
             time.sleep(0.2)
+
+# see hack in /boot/cmline.txt : 38400 is 31250 baud for MIDI!
+ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
+
+def MidiSerialCallback():
+    message = [0, 0, 0]
+    while True:
+        i = 0
+        while i < 3:
+            data = ord(ser.read(1))  # read a byte
+            if data >> 7 != 0:
+                i = 0      # status byte!   this is the beginning of a midi message: http://www.midi.org/techspecs/midimessages.php
+            message[i] = data
+            i += 1
+            if i == 2 and message[0] >> 4 == 12:  # program change: don't wait for a third byte: it has only 2 bytes
+                message[2] = 0
+                i = 3
+        MidiCallback(message, None)
 
 if __name__ == "__main__":
 

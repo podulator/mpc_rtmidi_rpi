@@ -2,6 +2,8 @@
 
 ## Taken from http://wiki.linuxaudio.org/wiki/raspberrypi
 
+/bin/sleep 5
+
 ## Stop the ntp service
 service ntp stop
 
@@ -38,5 +40,8 @@ killall dbus-launch
 # service ifplugd stop
 # killall ifplugd
 # service networking stop
+
+# setup the correct baud rate for MIDI
+stty -F /dev/ttyAMA0 38400
 
 exit 0
