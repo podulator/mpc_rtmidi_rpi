@@ -74,6 +74,7 @@ drum_map = {
 
 GPIO.setmode(GPIO.BCM)
 midi_in = None
+ser = None
 is_dirty = False
 initialised = False
 mybus = smbus.SMBus(1)
@@ -134,28 +135,39 @@ def animate(longString):
     strlen = len(longString) - 4
     clearDisplay()
     for x in range(0, strlen - 1):
-        raw_display( longString[x:x+4] )
-        time.sleep(0.2)
+        if ( raw_display( longString[x:x+4] ) ):
+            # only sleep if there's really a display there
+            time.sleep(0.2)
 
 def displayChannel(channel):
     logger.info( "midi channel set to :: " + str(channel).zfill(2) )
     raw_display( "CH" + str(channel).zfill(2) )
 
 def clearDisplay():
-    mybus.write_byte(0x71, 0x76)
+    global mybus
+    try:
+        mybus.write_byte(0x71, 0x76)
+    except:
+        pass
 
 def raw_display(s):
     global mybus
-    # position cursor at 0, append the string
-    for k in '\x79\x00' + s:
-        try:
-            # 0x71 is the hardware address of the lcd
-            mybus.write_byte(0x71, ord(k))
-        except:
+    success = True
+    try:
+        # position cursor at 0, append the string
+        for k in '\x79\x00' + s:
             try:
+                # 0x71 is the hardware address of the lcd
                 mybus.write_byte(0x71, ord(k))
             except:
-                pass
+                try:
+                    mybus.write_byte(0x71, ord(k))
+                except:
+                    success = False
+    except:
+        success = False
+    return success
+
 
 def callback(message, time_stamp):
 
@@ -238,29 +250,43 @@ def auto_off(drum):
     GPIO.output(drum["gpio"], False)
 
 def initialise():
-    global my_channel, initialised
+    global ser, my_channel, initialised
+    # did we find any serial or usb midi ports at all
+    has_ports = False
 
+    logger.info("setting up mpc mappings")
     for drum_key in drum_map:
         logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
         GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
 
-    logger.info("searching for Midi in ports ... ")
-    midi_in = rtmidi.MidiIn()
+    logger.info("checking for rpi serial port on /dev/ttyAMA0")
+    #try:
+    ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
+    logger.info("claimed port " + str(ser.port) + " @ baudrate " + str(ser.baudrate))
+    logger.info("starting serial midi thread")
+    MidiThread = threading.Thread( target=MidiSerialCallback )
+    MidiThread.daemon = True
+    MidiThread.start()
+    has_ports = True
+    #except:
+    #    logger.info("serial port not found, skipping")
 
-    has_ports = False
-    for port_name in midi_in.ports:
-        logger.info("found port :: " + port_name)
-        has_ports = True
+    logger.info("searching for alt USB Midi in ports ... ")
+    midi_in = rtmidi.MidiIn()
+    midi_in.callback = callback
+    # skip any of sysex, time and sensitivity aka. aftertouch
+    midi_in.ignore_types(True, True, True)
+
+    for port in midi_in.ports:
+        if 'Midi Through' not in port:
+            logger.info("opening port :: " + port)
+            midi_in.open_port(port)
+            has_ports = True
 
     if ( not has_ports ):
-        logger.info("no midi in ports found, quitting")
+        logger.error("no midi in ports found, quitting")
+        destroy()
         exit (1)
-    else:
-        logger.info("opening first port")
-        midi_in.callback = callback
-        # skip any of sysex, time and sensitivity aka. aftertouch
-        midi_in.ignore_types(True, True, True)
-        midi_in.open_port( 0 )
 
     if ( os.path.isfile('mpc.cfg') ):
         logger.info("loading settings from mpc.cfg file")
@@ -272,11 +298,6 @@ def initialise():
     ButtonsThread = threading.Thread(target=Buttons)
     ButtonsThread.daemon = True
     ButtonsThread.start()
-
-    # setup serial port midi
-    MidiThread = threading.Thread(target=MidiSerialCallback)
-    MidiThread.daemon = True
-    MidiThread.start()
 
     animate("    ----InIt----nnIDI-2-nnPC----    ")
     displayChannel( my_channel )
@@ -342,20 +363,25 @@ def Buttons():
         if ( time ):
             time.sleep(0.2)
 
-# see hack in /boot/cmline.txt : 38400 is 31250 baud for MIDI!
-ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
-
 def MidiSerialCallback():
+    if ( ser == None ):
+        return
+
     message = [0, 0, 0]
     while True:
         i = 0
         while i < 3:
-            data = ord(ser.read(1))  # read a byte
+            # read a byte
+            data = ord(ser.read(1))
             if data >> 7 != 0:
-                i = 0      # status byte!   this is the beginning of a midi message: http://www.midi.org/techspecs/midimessages.php
+                # status byte!
+                # this is the beginning of a midi message:
+                # http://www.midi.org/techspecs/midimessages.php
+                i = 0
             message[i] = data
             i += 1
-            if i == 2 and message[0] >> 4 == 12:  # program change: don't wait for a third byte: it has only 2 bytes
+            # program change: don't wait for a third byte: it has only 2 bytes
+            if i == 2 and message[0] >> 4 == 12:
                 message[2] = 0
                 i = 3
         MidiCallback(message, None)
