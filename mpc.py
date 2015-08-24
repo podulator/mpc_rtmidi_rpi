@@ -79,7 +79,7 @@ is_dirty = False
 initialised = False
 mybus = smbus.SMBus(1)
 
-debugLevel = logging.INFO
+debugLevel = logging.DEBUG#INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -262,7 +262,7 @@ def initialise():
     logger.info("checking for rpi serial port on /dev/ttyAMA0")
     try:
         ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
-        logger.info("claimed port " + str(ser.port) + " @ baudrate " + str(ser.baudrate))
+        logger.info("got handle to port " + str(ser.port) + " @ baudrate " + str(ser.baudrate))
         logger.info("starting serial midi thread")
         MidiThread = threading.Thread( target=MidiSerialCallback )
         MidiThread.daemon = True
@@ -357,7 +357,7 @@ def Buttons():
                 lastButtonTime = now
                 decrementMidiChannel()
             else:
-                logger.debug("no button pressed")
+                # logger.debug("no button pressed")
                 longPressTime = 0
 
         if ( time ):
@@ -366,6 +366,8 @@ def Buttons():
 def MidiSerialCallback():
     if ( ser == None ):
         return
+
+    logger.info("MidiSerialCallback thread running")
 
     message = [0, 0, 0]
     while True:
@@ -384,6 +386,7 @@ def MidiSerialCallback():
             if i == 2 and message[0] >> 4 == 12:
                 message[2] = 0
                 i = 3
+        logger.debug("got a full serial midi message :: " + str(message))
         MidiCallback(message, None)
 
 if __name__ == "__main__":
