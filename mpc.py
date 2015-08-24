@@ -260,16 +260,16 @@ def initialise():
         GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
 
     logger.info("checking for rpi serial port on /dev/ttyAMA0")
-    #try:
-    ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
-    logger.info("claimed port " + str(ser.port) + " @ baudrate " + str(ser.baudrate))
-    logger.info("starting serial midi thread")
-    MidiThread = threading.Thread( target=MidiSerialCallback )
-    MidiThread.daemon = True
-    MidiThread.start()
-    has_ports = True
-    #except:
-    #    logger.info("serial port not found, skipping")
+    try:
+        ser = serial.Serial('/dev/ttyAMA0', baudrate=38400)
+        logger.info("claimed port " + str(ser.port) + " @ baudrate " + str(ser.baudrate))
+        logger.info("starting serial midi thread")
+        MidiThread = threading.Thread( target=MidiSerialCallback )
+        MidiThread.daemon = True
+        MidiThread.start()
+        has_ports = True
+    except:
+        logger.info("serial port not found, this ain't a rpi, skipping")
 
     logger.info("searching for alt USB Midi in ports ... ")
     midi_in = rtmidi.MidiIn()
