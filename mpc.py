@@ -164,14 +164,14 @@ def callback(message, time_stamp):
     if ( not initialised ):
         return
 
-    if ( logger.isEnabledFor(logging.INFO) ):
+    if ( logger.isEnabledFor(logging.DEBUG) ):
         message_text = ", ".join(map(str, message))
         logger.debug( "received :: (@ " + str(time_stamp) + ") == " + message_text )
 
     if ( in_sys_exclusive ):
         logger.debug( "handling sysex stream" )
         if ( message[0] == 0xF7 ):
-            logger.info( "at the end of the message :: " + str(sysex_buffer) )
+            logger.info( "at the end of the sysex message :: " + str(sysex_buffer) )
             in_sys_exclusive = False
         else:
             logger.debug( "appending message part :: " + str(message) )
@@ -197,10 +197,12 @@ def callback(message, time_stamp):
     elif ( (message[0] == c.NOTE_OFF | (my_channel - 1)) ):
         logger.debug( "it's a 'note off' event on our channel" )
 
-        for drum_key in drum_map:
-            if ( drum_map[drum_key]["midi_key"] == message[1] ):
-                logger.info( "let's stop that " + drum_key )
-                break
+        if (not SendAutoOff):
+            for drum_key in drum_map:
+                if ( drum_map[drum_key]["midi_key"] == message[1] ):
+                    logger.info( "let's stop that " + drum_key )
+                    GPIO.output( drum_map[drum_key]["gpio"], False )
+                    break
 
     elif ( message[0] == 0xF2 ):
         logger.debug( "song position counter" )
