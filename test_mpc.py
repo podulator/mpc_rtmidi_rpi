@@ -4,6 +4,7 @@ import time
 import sys
 import mpc as mpc
 import logging
+import random
 
 mpc.setDebugLevel(logging.INFO)
 mpc.initialise()
@@ -12,11 +13,11 @@ mpc.incrementMidiChannel()
 
 pattern = [
             [ mpc.drum_map["kick"], mpc.drum_map["cymbal"] ],
-            [ mpc.drum_map["cymbal_stop"] ],
+            [ mpc.drum_map["closed_hat"] ],
             [ mpc.drum_map["snare"] ],
             [],
             [ mpc.drum_map["kick"] ],
-            [],
+            [ mpc.drum_map["open_hat"] ],
             [ mpc.drum_map["kick"] ],
             [ mpc.drum_map["snare"] ]
 ]
@@ -29,7 +30,8 @@ try:
                 #print type(instrument)
                 # callback the note on channel 2 at 64 velocity
                 note = instrument["midi_key"]#.values()[1]
-                mpc.callback([0x91, note, 0x40], int(round(time.time() * 1000)))
+                velocity = random.randint(40, 127)
+                mpc.MidiCallback([0x91, note, velocity], int(round(time.time() * 1000)))
             time.sleep(0.25)
 except KeyboardInterrupt:
     # quit

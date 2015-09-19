@@ -23,6 +23,7 @@ import serial
 #
 # also, stop the UART being a serial console
 # remove the refernce to ttyAMA0 in /boot/cmdline,txt
+# and for a rpi B add bcm2708.uart_clock=3000000
 #
 # edit /boot/config.txt, adding the following lines
 # # Change UART clock to 2441000 for MIDI 31250 baud rate
@@ -43,7 +44,7 @@ import serial
 #
 
 SendAutoOff = True
-AutoOffSleepMS = 0.1
+AutoOffSleepMS = 0.01
 in_sys_exclusive = False
 sysex_buffer = []
 my_channel = 1
@@ -68,8 +69,8 @@ drum_map = {
     'open_hat': {'midi_key': 32, 'gpio': 19, 'dplug': 12},
     # a#1, gpio 10, d-plug 6
     'cymbal': {'midi_key': 34, 'gpio': 21, 'dplug': 6},
-    # c1, gpio 11, d-plug 13
-    'cymbal_stop': {'midi_key': 36, 'gpio': 23, 'dplug': 13}
+    # None, gpio 26, d-plug 1
+    'accent' : {'midi_key': None, 'gpio': 26, 'dplug': 1}
 }
 
 GPIO.setmode(GPIO.BCM)
@@ -78,7 +79,8 @@ ser = None
 is_dirty = False
 initialised = False
 mybus = smbus.SMBus(1)
-
+VOLTAGE_LOW = 0
+VOLTAGE_HIGH = 1
 debugLevel = logging.DEBUG#INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -169,7 +171,7 @@ def raw_display(s):
     return success
 
 
-def callback(message, time_stamp):
+def MidiCallback(message, time_stamp):
 
     global in_sys_exclusive, initialised, sysex_buffer
 
@@ -195,14 +197,25 @@ def callback(message, time_stamp):
 
         for drum_key in drum_map:
             if ( drum_map[drum_key]["midi_key"] == message[1] ):
-                logger.info( "let's hit the " + drum_key + " on GPIO " + str(drum_map[drum_key]["gpio"]) )
+
+                # test to see if we need to hit the accent too
+                accent = (message[2] > 64)
+                message = "let's hit the " + drum_key + " on GPIO " + str(drum_map[drum_key]["gpio"])
+                if (accent):
+                    logger.info( message + " really hard")
+                else:
+                    logger.info( message )
 
                 # light up the pin
-                GPIO.output( drum_map[drum_key]["gpio"], True )
+                if (accent):
+                    GPIO.output( drum_map["accent"]["gpio"], VOLTAGE_HIGH )
+                GPIO.output( drum_map[drum_key]["gpio"], VOLTAGE_HIGH )
+                if (accent):
+                    auto_off( drum_map["accent"] )
 
                 # and then do an auto off
                 if ( SendAutoOff ):
-                    auto_off(drum_map[drum_key])
+                    auto_off( drum_map[drum_key] )
 
                 break
 
@@ -213,7 +226,7 @@ def callback(message, time_stamp):
             for drum_key in drum_map:
                 if ( drum_map[drum_key]["midi_key"] == message[1] ):
                     logger.info( "let's stop that " + drum_key )
-                    GPIO.output( drum_map[drum_key]["gpio"], False )
+                    GPIO.output( drum_map[drum_key]["gpio"], VOLTAGE_LOW )
                     break
 
     elif ( message[0] == 0xF2 ):
@@ -247,7 +260,7 @@ def callback(message, time_stamp):
 def auto_off(drum):
     time.sleep(AutoOffSleepMS)
     logger.info( "auto_off killing GPIO " + str(drum["gpio"]) )
-    GPIO.output(drum["gpio"], False)
+    GPIO.output(drum["gpio"], VOLTAGE_LOW)
 
 def initialise():
     global ser, my_channel, initialised
@@ -256,8 +269,8 @@ def initialise():
 
     logger.info("setting up mpc mappings")
     for drum_key in drum_map:
-        logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for output")
-        GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT)
+        logger.info("setting pin " + str(drum_map[drum_key]["gpio"]) + " up for " + drum_key + " output")
+        GPIO.setup(drum_map[drum_key]["gpio"], GPIO.OUT, pull_up_down=GPIO.PUD_DOWN)
 
     logger.info("checking for rpi serial port on /dev/ttyAMA0")
     try:
@@ -273,7 +286,7 @@ def initialise():
 
     logger.info("searching for alt USB Midi in ports ... ")
     midi_in = rtmidi.MidiIn()
-    midi_in.callback = callback
+    midi_in.callback = MidiCallback
     # skip any of sysex, time and sensitivity aka. aftertouch
     midi_in.ignore_types(True, True, True)
 
