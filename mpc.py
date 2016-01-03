@@ -48,6 +48,9 @@ AutoOffSleepMS = 0.01
 in_sys_exclusive = False
 sysex_buffer = []
 my_channel = 1
+CHANNEL_INCREMENT_GPIO = 18
+CHANNEL_DECREMENT_GPIO = 17
+
 drum_map = {
     # c0, gpio 1, d-plug 8
     'kick': {'midi_key': 24, 'gpio': 4, 'dplug': 8},
@@ -81,6 +84,8 @@ initialised = False
 mybus = smbus.SMBus(1)
 VOLTAGE_LOW = 0
 VOLTAGE_HIGH = 1
+MIDI_CHANNEL_MAX = 16
+MIDI_CHANNEL_MIN = 1
 debugLevel = logging.DEBUG#INFO
 logger = logging.getLogger('mpc')
 logger.setLevel(debugLevel)
@@ -97,16 +102,16 @@ def setDebugLevel(val):
 def incrementMidiChannel():
     global my_channel, is_dirty
     my_channel += 1
-    if ( my_channel > 16 ):
-        my_channel = 1
+    if ( my_channel > MIDI_CHANNEL_MAX ):
+        my_channel = MIDI_CHANNEL_MIN
     is_dirty = True
     displayChannel( my_channel )
 
 def decrementMidiChannel():
     global my_channel, is_dirty
     my_channel -= 1
-    if ( my_channel < 1 ):
-        my_channel = 16
+    if ( my_channel < MIDI_CHANNEL_MIN ):
+        my_channel = MIDI_CHANNEL_MAX
     is_dirty = True
     displayChannel( my_channel )
 
@@ -114,10 +119,10 @@ def setMidiChannel(channel):
     global my_channel, is_dirty
     if ( my_channel != channel ):
         my_channel = channel
-        if ( my_channel < 1 ):
-            my_channel = 1
-        if ( my_channel > 16 ):
-            my_channel = 16
+        if ( my_channel < MIDI_CHANNEL_MIN ):
+            my_channel = MIDI_CHANNEL_MIN
+        if ( my_channel > MIDI_CHANNEL_MAX ):
+            my_channel = MIDI_CHANNEL_MAX
         is_dirty = True
         displayChannel( my_channel )
 
@@ -333,8 +338,8 @@ def destroy():
 
 def Buttons():
     logger.info("setting up hardware buttons")
-    GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(CHANNEL_DECREMENT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(CHANNEL_INCREMENT_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     global initialised, is_dirty
     lastButtonTime = 0
@@ -342,7 +347,7 @@ def Buttons():
     while True:
         if (initialised):
             now = time.time()
-            if ( not GPIO.input(18) and not GPIO.input(17) and (now - lastButtonTime) > 0.2 ):
+            if ( not GPIO.input(CHANNEL_INCREMENT_GPIO) and not GPIO.input(CHANNEL_DECREMENT_GPIO) and (now - lastButtonTime) > 0.2 ):
                 logger.info("both buttons pressed")
                 lastButtonTime = now
                 # cache the start of the dbl button press
@@ -358,13 +363,13 @@ def Buttons():
                         logger.info("shutting down")
                         shutdown()
 
-            elif ( not GPIO.input(17) and (now - lastButtonTime) > 0.5) :
+            elif ( not GPIO.input(CHANNEL_DECREMENT_GPIO) and (now - lastButtonTime) > 0.5) :
                 longPressTime = 0
                 logger.info("increment button pressed")
                 lastButtonTime = now
                 incrementMidiChannel()
 
-            elif ( not GPIO.input(18) and (now - lastButtonTime) > 0.5 ):
+            elif ( not GPIO.input(CHANNEL_INCREMENT_GPIO) and (now - lastButtonTime) > 0.5 ):
                 longPressTime = 0
                 logger.info("decrement button pressed")
                 lastButtonTime = now
